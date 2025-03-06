@@ -1,0 +1,171 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+enum SubscriptionPlan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum MediaType {
+  VIDEO
+  IMAGE
+}
+
+model User {
+  id              String         @id @default(uuid())
+  email           String         @unique
+  name            String?
+  password        String?        @db.Text
+  image           String?  
+  emailVerified   DateTime?  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  role            String         @default("USER") // ADMIN, USER
+  credits         Int            @default(0)
+  subscriptionId  String?
+  subscription    Subscription?
+  projects        Project[]
+  ttsRequests     TTSRequest[]
+  payments        Payment[]
+  accounts      Account[]
+  sessions      Session[]
+
+  @@index([email])
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+
+model Project {
+  id              String         @id @default(uuid())
+  title           String
+  content         String
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  // User-uploaded media
+  uploadedVideoUrl String?       // Added for user-uploaded video
+  uploadedAudioUrl String?       // Added for user-uploaded audio
+  // Generated media
+  backgroundVideo String?        // Background video from media library
+  ttsAudioUrl     String?        // Generated TTS audio
+  subtitlesStyle  Json?          
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  renderedVideos  RenderedVideo[]  @relation("ProjectToRenderedVideo")
+  isPublic        Boolean        @default(false)
+
+  @@index([userId])
+}
+
+model RenderedVideo {
+  id          String     @id @default(uuid())
+  projectId   String
+  project     Project    @relation("ProjectToRenderedVideo", fields: [projectId], references: [id], onDelete: Cascade)
+  videoUrl    String     // Final rendered video URL
+  resolution  String     @default("1080p")
+  watermark   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  expiresAt   DateTime?  
+
+  @@index([projectId])
+}
+
+model BackgroundMedia {
+  id          String     @id @default(uuid())
+  url         String
+  type        MediaType
+  category    String?    // motivational, nature, abstract, etc.
+  isPremium   Boolean    @default(false)
+  uploadedBy  String?    // User ID if user-uploaded
+  createdAt   DateTime   @default(now())
+
+  @@index([category])
+}
+
+model Subscription {
+  id              String           @id @default(uuid())
+  plan            SubscriptionPlan
+  cryptoWallet    String?          // User's wallet address
+  userId          String          @unique
+  user            User            @relation(fields: [userId], references: [id])
+  status          String           // active, expired, pending
+  txHash          String?          // Blockchain transaction hash
+  network         String?          // e.g., Ethereum, Solana, Binance Chain
+  createdAt       DateTime         @default(now())
+}
+
+model Payment {
+  id            String     @id @default(uuid())
+  amount        Float
+  currency      String     @default("USDT") // USDT, ETH, BTC, etc.
+  txHash        String     @unique // On-chain transaction ID
+  userId        String
+  user          User       @relation(fields: [userId], references: [id])
+  confirmations Int        @default(0) // Blockchain confirmations
+  status        String     @default("pending") // pending, confirmed, failed
+  createdAt     DateTime   @default(now())
+}
+
+model TTSRequest {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id])
+  characters    Int
+  cost          Float
+  voiceId       String
+  projectId     String?
+  createdAt     DateTime   @default(now())
+
+  @@index([userId])
+}
+
+model WebhookEvent {
+  id          String     @id @default(uuid())
+  type        String
+  payload     Json
+  processed   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+}
